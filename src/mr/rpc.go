@@ -6,8 +6,10 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
-import "strconv"
+import (
+	"os"
+	"strconv"
+)
 
 //
 // example to show how to declare the arguments
@@ -25,13 +27,13 @@ type ExampleReply struct {
 // Add your RPC definitions here.
 type MapArgs struct {
 	TaskNumber int
+	IntermediateFiles []string
 }
 
 type MapReply struct {
-	Filename string
-	NReduce int
+	Filename   string
+	NReduce    int
 	TaskNumber int
-	Running bool
 }
 
 type ReduceArgs struct {
@@ -40,8 +42,8 @@ type ReduceArgs struct {
 
 type ReduceReply struct {
 	TaskNumber int
-	NMap int
-	Running bool
+	NMap       int
+	IntermediateFiles []string
 }
 
 // Cook up a unique-ish UNIX-domain socket name
@@ -49,7 +51,7 @@ type ReduceReply struct {
 // Can't use the current directory since
 // Athena AFS doesn't support UNIX-domain sockets.
 func coordinatorSock() string {
-	s := "/var/tmp/824-mr-"
+	s := "/var/tmp/5840-mr-"
 	s += strconv.Itoa(os.Getuid())
 	return s
 }

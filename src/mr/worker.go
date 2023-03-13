@@ -58,7 +58,6 @@ func RunMapTask(mapf func(string, string) []KeyValue) {
 		filename := reply.Filename
 		file, err := os.Open(filename)
 		if err != nil {
-			fmt.Println("here")
 			log.Fatalf("cannot open %v", filename)
 		}
 		content, err := ioutil.ReadAll(file)
@@ -77,19 +76,27 @@ func RunMapTask(mapf func(string, string) []KeyValue) {
 		}
 
 		// Write these kv pairs into intermediate files
+		tempFiles := make([]string, reply.NReduce)
 		for bucket := 0; bucket < reply.NReduce; bucket++ {
-			iname := fmt.Sprintf("mr-%d-%d", reply.TaskNumber, bucket)
-			ifile, _ := os.Create(iname)
+			ifile, _ := ioutil.TempFile("", fmt.Sprintf("mr-%d-%d-", reply.TaskNumber, bucket))
+			tempFiles[bucket] = ifile.Name()
 			enc := json.NewEncoder(ifile)
 			for _, kv := range intermediate[bucket] {
 				err := enc.Encode(&kv)
 				if err != nil {
-					log.Fatalf("cannot write to an intermediate file %v", iname)
+					log.Fatalf("cannot write to an intermediate file %v", tempFiles[bucket])
 				}
 			}
 			ifile.Close()
 		}
-		call("Coordinator.CompleteMapTask", &MapArgs{TaskNumber: reply.TaskNumber}, &MapReply{})
+		ok := call("Coordinator.CompleteMapTask",
+			&MapArgs{TaskNumber: reply.TaskNumber, IntermediateFiles: tempFiles},
+			&MapReply{})
+		if !ok {
+			for _, ifilename := range tempFiles {
+				os.Remove(ifilename)
+			}
+		}
 	}
 }
 
@@ -104,12 +111,13 @@ func RunReduceTask(reducef func(string, []string) string) {
 		}
 
 		var intermediate []KeyValue
-		for i := 0; i < reply.NMap; i++ {
-			iname := fmt.Sprintf("mr-%d-%d", i, reply.TaskNumber)
+		// save temporary filenames to delete later
+		tempFiles := make([]string, len(reply.IntermediateFiles))
+		for i, iname := range reply.IntermediateFiles {
 			ifile, err := os.Open(iname)
+			tempFiles[i] = iname
 			if err != nil {
-				fmt.Println(ifile)
-				log.Fatalf("cannot open %v", ifile)
+				log.Fatalf("cannot open %v", iname)
 			}
 			dec := json.NewDecoder(ifile)
 			for {
@@ -120,13 +128,12 @@ func RunReduceTask(reducef func(string, []string) string) {
 				intermediate = append(intermediate, kv)
 			}
 			ifile.Close()
-			os.Remove(ifile.Name())
 		}
-		
+
 		// sort all intermediate data of this `Reduce` partition by keys
 		sort.Sort(ByKey(intermediate))
-		ofile, _ := ioutil.TempFile("", "mr-temp")
-		
+		ofile, _ := ioutil.TempFile("", "mr-temp-")
+
 		for i := 0; i < len(intermediate); {
 			j := i + 1
 			for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
@@ -142,9 +149,16 @@ func RunReduceTask(reducef func(string, []string) string) {
 			i = j
 		}
 		ofile.Close()
-		curDir, _ := os.Getwd()
-		os.Rename(ofile.Name(), fmt.Sprintf("%s/mr-out-%d", curDir, reply.TaskNumber))
-		call("Coordinator.CompleteReduceTask", &ReduceArgs{TaskNumber: reply.TaskNumber}, &ReduceReply{})
+		ok := call("Coordinator.CompleteReduceTask", &ReduceArgs{TaskNumber: reply.TaskNumber}, &ReduceReply{})
+		if !ok {
+			os.Remove(ofile.Name())
+		} else {
+			for _, iname := range tempFiles {
+				os.Remove(iname)
+			}
+			curDir, _ := os.Getwd()
+			os.Rename(ofile.Name(), fmt.Sprintf("%s/mr-out-%d", curDir, reply.TaskNumber))
+		}
 	}
 }
 
@@ -177,6 +191,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
+		fmt.Println(rpcname)
 		log.Fatal("dialing:", err)
 	}
 	defer c.Close()
@@ -186,6 +201,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	fmt.Println(err)
+	// fmt.Println(err)
 	return false
 }
