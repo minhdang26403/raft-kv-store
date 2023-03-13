@@ -37,13 +37,8 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
 	RunMapTask(mapf)
 	RunReduceTask(reducef)
-
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
-
 }
 
 // Get a Map task from the coordinator and run if there is one.
@@ -78,7 +73,7 @@ func RunMapTask(mapf func(string, string) []KeyValue) {
 		// Write these kv pairs into intermediate files
 		tempFiles := make([]string, reply.NReduce)
 		for bucket := 0; bucket < reply.NReduce; bucket++ {
-			ifile, _ := ioutil.TempFile("", fmt.Sprintf("mr-%d-%d-", reply.TaskNumber, bucket))
+			ifile, _ := os.CreateTemp("", fmt.Sprintf("mr-%d-%d-", reply.TaskNumber, bucket))
 			tempFiles[bucket] = ifile.Name()
 			enc := json.NewEncoder(ifile)
 			for _, kv := range intermediate[bucket] {
@@ -132,7 +127,7 @@ func RunReduceTask(reducef func(string, []string) string) {
 
 		// sort all intermediate data of this `Reduce` partition by keys
 		sort.Sort(ByKey(intermediate))
-		ofile, _ := ioutil.TempFile("", "mr-temp-")
+		ofile, _ := os.CreateTemp("", "mr-temp-")
 
 		for i := 0; i < len(intermediate); {
 			j := i + 1
@@ -149,7 +144,8 @@ func RunReduceTask(reducef func(string, []string) string) {
 			i = j
 		}
 		ofile.Close()
-		ok := call("Coordinator.CompleteReduceTask", &ReduceArgs{TaskNumber: reply.TaskNumber}, &ReduceReply{})
+		taskNum := reply.TaskNumber
+		ok := call("Coordinator.CompleteReduceTask", &ReduceArgs{TaskNumber: taskNum}, &ReduceReply{})
 		if !ok {
 			os.Remove(ofile.Name())
 		} else {
@@ -157,30 +153,9 @@ func RunReduceTask(reducef func(string, []string) string) {
 				os.Remove(iname)
 			}
 			curDir, _ := os.Getwd()
-			os.Rename(ofile.Name(), fmt.Sprintf("%s/mr-out-%d", curDir, reply.TaskNumber))
+			os.Rename(ofile.Name(), fmt.Sprintf("%s/mr-out-%d", curDir, taskNum))
 		}
 	}
-}
-
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	call("Coordinator.Example", &args, &reply)
-
-	// reply.Y should be 100.
-	fmt.Printf("reply.Y %v\n", reply.Y)
 }
 
 // send an RPC request to the coordinator, wait for the response.
@@ -191,7 +166,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
-		fmt.Println(rpcname)
 		log.Fatal("dialing:", err)
 	}
 	defer c.Close()
@@ -201,6 +175,5 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	// fmt.Println(err)
 	return false
 }
