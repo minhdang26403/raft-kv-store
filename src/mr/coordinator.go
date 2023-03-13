@@ -180,13 +180,14 @@ func (c *Coordinator) Done() bool {
 
 func (c *Coordinator) CheckCrashedWorkers() {
 	c.mu.Lock()
+	// Wait for another thread to hand out all the Map tasks
+	// Avoid scheduling extraneous Map tasks prematurely
 	for c.numMapGiven != c.nMap {
 		c.mu.Unlock()
 		time.Sleep(5 * time.Second)
 		c.mu.Lock()
 	}
 
-	// c.mu.Lock()
 	for c.phase == Map {
 		c.mu.Unlock()
 		time.Sleep(10 * time.Second)

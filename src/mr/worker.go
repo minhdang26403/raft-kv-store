@@ -45,11 +45,11 @@ func Worker(mapf func(string, string) []KeyValue,
 // Return if there is no more Map task
 func RunMapTask(mapf func(string, string) []KeyValue) {
 	for {
-		args := MapArgs{}
 		reply := MapReply{}
-		if ok := call("Coordinator.GetMapTask", &args, &reply); !ok {
+		if ok := call("Coordinator.GetMapTask", &MapArgs{}, &reply); !ok {
 			break
 		}
+		// Read assigned input split
 		filename := reply.Filename
 		file, err := os.Open(filename)
 		if err != nil {
@@ -60,7 +60,8 @@ func RunMapTask(mapf func(string, string) []KeyValue) {
 			log.Fatalf("cannot read %v", filename)
 		}
 		file.Close()
-		// Call user-defined `Map` function
+
+		// Call user-defined `Map` function, maybe crash or slow
 		kva := mapf(filename, string(content))
 
 		// Put kv pairs into the corresponding bucket of each `Reduce` task
@@ -84,9 +85,12 @@ func RunMapTask(mapf func(string, string) []KeyValue) {
 			}
 			ifile.Close()
 		}
+
+		// Tell the coordinator that this task is complete and send the location of intermediate files
 		ok := call("Coordinator.CompleteMapTask",
 			&MapArgs{TaskNumber: reply.TaskNumber, IntermediateFiles: tempFiles},
 			&MapReply{})
+		// Clean up all the intermediate files if this task is already completed by another worker
 		if !ok {
 			for _, ifilename := range tempFiles {
 				os.Remove(ifilename)
@@ -108,6 +112,7 @@ func RunReduceTask(reducef func(string, []string) string) {
 		var intermediate []KeyValue
 		// save temporary filenames to delete later
 		tempFiles := make([]string, len(reply.IntermediateFiles))
+		// Read all kv pairs of this `Reduce` partition
 		for i, iname := range reply.IntermediateFiles {
 			ifile, err := os.Open(iname)
 			tempFiles[i] = iname
@@ -129,6 +134,7 @@ func RunReduceTask(reducef func(string, []string) string) {
 		sort.Sort(ByKey(intermediate))
 		ofile, _ := os.CreateTemp("", "mr-temp-")
 
+		// Do `Reduce` work
 		for i := 0; i < len(intermediate); {
 			j := i + 1
 			for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
@@ -144,14 +150,19 @@ func RunReduceTask(reducef func(string, []string) string) {
 			i = j
 		}
 		ofile.Close()
+
+		// Tell the coordinator that this task is complete
 		taskNum := reply.TaskNumber
 		ok := call("Coordinator.CompleteReduceTask", &ReduceArgs{TaskNumber: taskNum}, &ReduceReply{})
 		if !ok {
+			// Remove the intermediate output file if this task is completed by another worker
 			os.Remove(ofile.Name())
 		} else {
+			// Remove all the intermediate files read from Map task
 			for _, iname := range tempFiles {
 				os.Remove(iname)
 			}
+			// Rename (atomically commit) the intermediate output file into the final one
 			curDir, _ := os.Getwd()
 			os.Rename(ofile.Name(), fmt.Sprintf("%s/mr-out-%d", curDir, taskNum))
 		}
