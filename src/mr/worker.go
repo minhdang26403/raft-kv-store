@@ -37,7 +37,7 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-	
+
 	for {
 		reply := RequestReply{}
 		if ok := call("Coordinator.RequestTask", &RequestArgs{}, &reply); !ok {
@@ -61,9 +61,9 @@ func Worker(mapf func(string, string) []KeyValue,
 func runMapTask(mapf func(string, string) []KeyValue, reply *RequestReply) {
 	filename := reply.Filename
 	file, err := os.Open(filename)
-		if err != nil {
-			log.Fatalf("cannot open %v", filename)
-		}
+	if err != nil {
+		log.Fatalf("cannot open %v", filename)
+	}
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
 		log.Fatalf("cannot read %v", filename)
@@ -122,7 +122,7 @@ func runReduceTask(reducef func(string, []string) string, reply *RequestReply) {
 			}
 			intermediate = append(intermediate, kv)
 		}
-		ifile.Close()	
+		ifile.Close()
 	}
 
 	// sort all intermediate data of this `Reduce` partition by keys
@@ -169,6 +169,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	if err == nil {
 		return true
 	}
-	
+
 	return false
 }

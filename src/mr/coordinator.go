@@ -27,7 +27,7 @@ const (
 const TimeOut = 10 * time.Second
 
 type TaskStat struct {
-	state int
+	state     int
 	startTime time.Time
 }
 
@@ -39,10 +39,10 @@ type Coordinator struct {
 	phase   int        // the phase of MapReduce
 
 	numMapComplete int // the number of complete Map tasks
-	mapTasks   []TaskStat
+	mapTasks       []TaskStat
 
 	numReduceComplete int // the number of complete Reduce tasks
-	reduceTasks   []TaskStat
+	reduceTasks       []TaskStat
 }
 
 // RPC handlers for the worker to call.
@@ -111,7 +111,6 @@ func (c *Coordinator) FinishTask(args *ReportArgs, reply *ReportReply) error {
 	return nil
 }
 
-
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
 	rpc.Register(c)
@@ -140,10 +139,10 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
-		files:           files,
-		nMap:            len(files),
-		nReduce:         nReduce,
-		phase:           Map,
+		files:       files,
+		nMap:        len(files),
+		nReduce:     nReduce,
+		phase:       Map,
 		mapTasks:    make([]TaskStat, len(files)),
 		reduceTasks: make([]TaskStat, nReduce),
 	}
