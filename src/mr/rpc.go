@@ -12,24 +12,31 @@ import (
 )
 
 // Add your RPC definitions here.
-type MapArgs struct {
-	TaskNumber        int
-	IntermediateFiles []string
+type TaskType int
+
+const (
+	MapTask TaskType = iota
+	ReduceTask
+	WaitTask
+	NoTask
+)
+
+type RequestArgs struct {
 }
 
-type MapReply struct {
-	Filename   string
-	NReduce    int
-	TaskNumber int
+type RequestReply struct {
+	Filename string
+	Task     TaskType
+	TaskID   int
+	NReduce  int
+	NMap     int
 }
 
-type ReduceArgs struct {
-	TaskNumber int
+type ReportArgs struct {
+	TaskID int
 }
 
-type ReduceReply struct {
-	TaskNumber        int
-	IntermediateFiles []string
+type ReportReply struct {
 }
 
 // Cook up a unique-ish UNIX-domain socket name
