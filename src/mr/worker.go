@@ -186,6 +186,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	if err == nil {
 		return true
 	}
-	fmt.Println(err)
+	
 	return false
 }

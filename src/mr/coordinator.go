@@ -49,15 +49,20 @@ type Coordinator struct {
 func (c *Coordinator) GetMapTask(args *MapArgs, reply *MapReply) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.phase != Map {
+		return fmt.Errorf("Map phase done")
+	}
+	
 	taskNumber := c.numMapGiven
+	if taskNumber > c.nMap {
+		log.Fatalf("Phase: %d\nNum Map running: %d\nNum Reduce running: %d\n", c.phase, c.numMapRunning, c.numReduceRunning)
+	}
 	found := false
 	if c.numMapGiven == c.nMap {
 		for !found {
-			if c.numMapRunning == 0 {
-				return fmt.Errorf("Map phase done")
-			}
 			c.mapPhase.Wait()
-			if c.numMapGiven == c.nMap && c.numMapRunning == 0 {
+			if c.phase != Map {
 				return fmt.Errorf("Map phase done")
 			}
 			for i := 0; i < c.nMap; i++ {
@@ -189,7 +194,7 @@ func (c *Coordinator) CheckCrashedWorkers() {
 	// Avoid scheduling extraneous Map tasks prematurely
 	for c.numMapGiven != c.nMap {
 		c.mu.Unlock()
-		time.Sleep(5 * time.Second)
+		time.Sleep(time.Second)
 		c.mu.Lock()
 	}
 
@@ -197,7 +202,7 @@ func (c *Coordinator) CheckCrashedWorkers() {
 		c.mu.Unlock()
 		time.Sleep(10 * time.Second)
 		c.mu.Lock()
-		if c.phase != 0 {
+		if c.phase != Map {
 			break
 		}
 		for i := 0; i < c.nMap; i++ {
@@ -205,9 +210,9 @@ func (c *Coordinator) CheckCrashedWorkers() {
 				c.numMapGiven--
 				c.numMapRunning--
 				c.mapTaskState[i] = idle
-				c.mapPhase.Signal() // Maybe a subtle error here? Unlock before signaling other threads
 			}
 		}
+		c.mapPhase.Broadcast()
 	}
 	c.mu.Unlock()
 
@@ -222,10 +227,10 @@ func (c *Coordinator) CheckCrashedWorkers() {
 				c.numReduceGiven--
 				c.numReduceRunning--
 				c.reduceTaskState[i] = idle
-				c.reducePhase.Signal()
 			}
 		}
 		c.mu.Unlock()
+		c.reducePhase.Broadcast()
 	}
 }
 
