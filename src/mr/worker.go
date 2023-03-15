@@ -112,11 +112,12 @@ func RunReduceTask(reducef func(string, []string) string) {
 		var intermediate []KeyValue
 		// save temporary filenames to delete later
 		tempFiles := make([]string, len(reply.IntermediateFiles))
+		copy(tempFiles, reply.IntermediateFiles)
 		// Read all kv pairs of this `Reduce` partition
-		for i, iname := range reply.IntermediateFiles {
+		for _, iname := range tempFiles {
 			ifile, err := os.Open(iname)
-			tempFiles[i] = iname
 			if err != nil {
+				fmt.Println(tempFiles)
 				log.Fatalf("cannot open %v", iname)
 			}
 			dec := json.NewDecoder(ifile)
@@ -185,6 +186,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	if err == nil {
 		return true
 	}
-
+	fmt.Println(err)
 	return false
 }
