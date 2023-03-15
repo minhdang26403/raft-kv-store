@@ -50,7 +50,7 @@ func (c *Coordinator) GetMapTask(args *MapArgs, reply *MapReply) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	taskNumber := c.numMapGiven
-	found := fals
+	found := false
 	if c.numMapGiven == c.nMap {
 		for !found {
 			if c.numMapRunning == 0 {
