@@ -287,6 +287,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // the struct itself.
 func (rf *Raft) sendRequestVote(server int) {
 	rf.mu.Lock()
+	// state may change at the time we acquire the lock again
+	if rf.state != candidate {
+		rf.mu.Unlock()
+		return
+	}
 	args := RequestVoteArgs{Term: rf.currentTerm, CandidateId: rf.me}
 	reply := RequestVoteReply{}
 	rf.mu.Unlock()
@@ -325,6 +330,11 @@ func (rf *Raft) sendRequestVote(server int) {
 
 func (rf *Raft) sendAppendEntries(server int) {
 	rf.mu.Lock()
+	// state may change at the time we acquire the lock again
+	if rf.state != leader {
+		rf.mu.Unlock()
+		return
+	}
 	args := AppendEntriesArgs{Term: rf.currentTerm, LeaderId: rf.me}
 	reply := AppendEntriesReply{}
 	rf.mu.Unlock()
