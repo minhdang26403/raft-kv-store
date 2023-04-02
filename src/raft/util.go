@@ -76,13 +76,9 @@ func Microseconds(t time.Time) string {
 	return fmt.Sprintf("%06d", t.Sub(debugStart).Microseconds()/100)
 }
 
-// Tutorial
-// func Debug(topic logTopic, format string, a ...interface{}) {
-// 	if debug >= 1 {
-// 		time := time.Since(debugStart).Microseconds()
-// 		time /= 100
-// 		prefix := fmt.Sprintf("%06d %v ", time, string(topic))
-// 		format = prefix + format
-// 		log.Printf(format, a...)
-// 	}
-// }
+func Min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

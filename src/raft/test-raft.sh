@@ -2,11 +2,12 @@
 
 trap 'exit 1' INT
 
-export VERBOSE=0
+export VERBOSE=1
 
 echo "Compiling raft.go..."
 go test -c -race
 chmod +x ./raft.test
+rm -rf output
 mkdir output
 echo "Running test $1 for $2 iterations..."
 for i in $(seq 1 "$2"); do
