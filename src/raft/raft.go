@@ -28,6 +28,20 @@ import (
 	"6.5840/labrpc"
 )
 
+const (
+	follower State = iota
+	candidate
+	leader
+)
+
+const (
+	HeartbeatInterval  = 100 * time.Millisecond
+	ElectionTimeoutMin = 300
+	ElectionTimeoutMax = 600
+)
+
+type State uint8
+
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make(). set
@@ -47,38 +61,6 @@ type ApplyMsg struct {
 	Snapshot      []byte
 	SnapshotTerm  int
 	SnapshotIndex int
-}
-
-type State uint8
-
-const (
-	follower State = iota
-	candidate
-	leader
-)
-
-func (s State) String() string {
-	if s == follower {
-		return "F"
-	} else if s == candidate {
-		return "C"
-	} else if s == leader {
-		return "L"
-	} else {
-		panic("invalid state " + string(rune(s)))
-	}
-}
-
-const (
-	HeartbeatInterval  = 100 * time.Millisecond
-	ElectionTimeoutMin = 300
-	ElectionTimeoutMax = 600
-)
-
-func getElectionTimeout() time.Duration {
-	// randomized election timeout in the range of 300-600ms
-	ms := ElectionTimeoutMin + (rand.Int63() % (ElectionTimeoutMax - ElectionTimeoutMin))
-	return time.Duration(ms) * time.Millisecond
 }
 
 // A Go object implementing a single Raft peer.
@@ -115,6 +97,58 @@ type Raft struct {
 type LogEntry struct {
 	Command interface{}
 	Term    int
+}
+
+// example RequestVote RPC arguments structure.
+// field names must start with capital letters!
+type RequestVoteArgs struct {
+	// Your data here (2A, 2B).
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
+}
+
+// example RequestVote RPC reply structure.
+// field names must start with capital letters!
+type RequestVoteReply struct {
+	// Your data here (2A).
+	Term        int
+	VoteGranted bool
+}
+
+type AppendEntriesArgs struct {
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	LeaderCommit int
+}
+
+type AppendEntriesReply struct {
+	Term          int
+	Success       bool
+	ConflictTerm  int
+	ConflictIndex int
+}
+
+func (s State) String() string {
+	if s == follower {
+		return "F"
+	} else if s == candidate {
+		return "C"
+	} else if s == leader {
+		return "L"
+	} else {
+		panic("invalid state " + string(rune(s)))
+	}
+}
+
+func getElectionTimeout() time.Duration {
+	// randomized election timeout in the range of 300-600ms
+	ms := ElectionTimeoutMin + (rand.Int63() % (ElectionTimeoutMax - ElectionTimeoutMin))
+	return time.Duration(ms) * time.Millisecond
 }
 
 // return currentTerm and whether this server
@@ -174,24 +208,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 }
 
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int
-	LastLogTerm  int
-}
-
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-type RequestVoteReply struct {
-	// Your data here (2A).
-	Term        int
-	VoteGranted bool
-}
-
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
@@ -234,22 +250,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		// reset election timer when granting vote to candidate
 		rf.lastHeartbeat = time.Now()
 	}
-}
-
-type AppendEntriesArgs struct {
-	Term         int
-	LeaderId     int
-	PrevLogIndex int
-	PrevLogTerm  int
-	Entries      []LogEntry
-	LeaderCommit int
-}
-
-type AppendEntriesReply struct {
-	Term    int
-	Success bool
-	ConflictTerm int
-	ConflictIndex int
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -346,7 +346,7 @@ func (rf *Raft) sendRequestVote(server int) {
 
 	lastLogIndex := len(rf.log) - 1
 	args := RequestVoteArgs{
-		Term: rf.currentTerm,
+		Term:         rf.currentTerm,
 		CandidateId:  rf.me,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  rf.log[lastLogIndex].Term,
@@ -577,7 +577,7 @@ func (rf *Raft) applyRoutine() {
 			rf.applyCond.Wait()
 		}
 
-		queue := make([]ApplyMsg, 0)
+		committedEntries := make([]ApplyMsg, 0)
 		for rf.commitIndex > rf.lastApplied {
 			rf.lastApplied++
 			msg := ApplyMsg{
@@ -585,11 +585,11 @@ func (rf *Raft) applyRoutine() {
 				Command:      rf.log[rf.lastApplied].Command,
 				CommandIndex: rf.lastApplied,
 			}
-			queue = append(queue, msg)
+			committedEntries = append(committedEntries, msg)
 		}
 		rf.mu.Unlock()
 
-		for _, msg := range queue {
+		for _, msg := range committedEntries {
 			rf.applyCh <- msg
 		}
 	}
