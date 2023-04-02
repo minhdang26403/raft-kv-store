@@ -19,7 +19,6 @@ package raft
 
 import (
 	//	"bytes"
-	"fmt"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -68,10 +67,6 @@ func (s State) String() string {
 	} else {
 		panic("invalid state " + string(rune(s)))
 	}
-}
-
-func (log LogEntry) String() string {
-	return fmt.Sprintf("%d", log.Term)
 }
 
 const (
@@ -125,14 +120,10 @@ type LogEntry struct {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
-	var term int
-	var isleader bool
-	// Your code here (2A).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	term = rf.currentTerm
-	isleader = rf.state == leader
+	term := rf.currentTerm
+	isleader := rf.state == leader
 	return term, isleader
 }
 
@@ -208,17 +199,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	defer rf.mu.Unlock()
 
 	reply.VoteGranted = false
-	if args.Term < rf.currentTerm {
+	candidateTerm := args.Term
+	if candidateTerm < rf.currentTerm {
 		// sender is behind
 		reply.Term = rf.currentTerm
 		return
 	}
 
-	if args.Term > rf.currentTerm {
+	if candidateTerm > rf.currentTerm {
 		rf.state = follower
 		// a candidate from a newer term asking for vote
 		// => reset vote (?)
-		rf.currentTerm = args.Term
+		rf.currentTerm = candidateTerm
 		rf.votedFor = -1
 	}
 
@@ -227,6 +219,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	voterLastLogIndex := len(rf.log) - 1
 	voterLastLogTerm := rf.log[voterLastLogIndex].Term
 
+	// Election restriction
 	if candidateLastLogTerm < voterLastLogTerm {
 		return
 	}
@@ -255,52 +248,64 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
+	ConflictTerm int
+	ConflictIndex int
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
 	reply.Success = false
-	if args.Term < rf.currentTerm {
-		// sender is behind
+	leaderTerm := args.Term
+	if leaderTerm < rf.currentTerm {
+		// detect stale leader
 		reply.Term = rf.currentTerm
 		return
 	}
 
-	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
+	if leaderTerm > rf.currentTerm {
+		rf.currentTerm = leaderTerm
 		rf.votedFor = -1
-	}
-
-	if args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-		rf.Debug(dLog, "Check 2 failed: Follower's log: %v (%d)", rf.log, args.PrevLogTerm)
-		return
-	}
-
-	if len(args.Entries) > 0 {
-		if args.PrevLogIndex+1 < len(rf.log) && rf.log[args.PrevLogIndex+1].Term != args.Entries[0].Term {
-			rf.log = rf.log[:args.PrevLogIndex+1]
-		}
-		for i := 0; i < len(args.Entries); i++ {
-			if args.PrevLogIndex+1+i < len(rf.log) && args.Entries[i].Term == rf.log[args.PrevLogIndex+1+i].Term {
-				continue
-			}
-			rf.log = append(rf.log, args.Entries[i])
-		}
-	}
-	// rf.Debug(dLog, "Follower's log: %s", rf.log)
-
-	if args.LeaderCommit > rf.commitIndex {
-		rf.commitIndex = Min(args.LeaderCommit, len(rf.log)-1)
-		rf.Debug(dCommit, "Follower committed %d", rf.commitIndex)
-		rf.Debug(dLog, "Follower's log: %v", rf.log)
-		rf.Debug(dLog, "Args from leader: %v", args)
-		rf.applyCond.Signal()
 	}
 
 	rf.state = follower
 	// reset election timer when hearing from CURRENT leader
 	rf.lastHeartbeat = time.Now()
+
+	prevLogIndex := args.PrevLogIndex
+	if prevLogIndex >= len(rf.log) {
+		reply.ConflictIndex = len(rf.log)
+		reply.ConflictTerm = -1
+		return
+	}
+
+	if rf.log[prevLogIndex].Term != args.PrevLogTerm {
+		reply.ConflictTerm = rf.log[prevLogIndex].Term
+		for i := prevLogIndex; i >= 0; i-- {
+			if rf.log[i].Term != reply.ConflictTerm {
+				break
+			}
+			reply.ConflictIndex = i
+		}
+		return
+	}
+
+	for i := 0; i < len(args.Entries); i++ {
+		logIndex := prevLogIndex + i + 1
+		if logIndex < len(rf.log) && rf.log[logIndex].Term != args.Entries[i].Term {
+			rf.log = rf.log[:logIndex]
+		}
+		if logIndex >= len(rf.log) {
+			rf.log = append(rf.log, args.Entries[i])
+		}
+	}
+
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = Min(args.LeaderCommit, len(rf.log)-1)
+		rf.applyCond.Signal()
+	}
+
 	reply.Success = true
 }
 
@@ -340,7 +345,8 @@ func (rf *Raft) sendRequestVote(server int) {
 	}
 
 	lastLogIndex := len(rf.log) - 1
-	args := RequestVoteArgs{Term: rf.currentTerm,
+	args := RequestVoteArgs{
+		Term: rf.currentTerm,
 		CandidateId:  rf.me,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  rf.log[lastLogIndex].Term,
@@ -374,7 +380,6 @@ func (rf *Raft) sendRequestVote(server int) {
 				rf.nextIndex[i] = len(rf.log)
 				rf.matchIndex[i] = 0
 			}
-			// rf.Debug(dLeader, "New leader's log: %v", rf.log)
 
 			for id := range rf.peers {
 				if id == rf.me {
@@ -394,18 +399,12 @@ func (rf *Raft) sendAppendEntries(server int) {
 		return
 	}
 
-	if rf.nextIndex[server] == 0 {
-		rf.mu.Unlock()
-		return
-	}
-	var entries []LogEntry
 	prevLogIndex := rf.nextIndex[server] - 1
 	prevLogTerm := rf.log[prevLogIndex].Term
 	lastLogIndex := len(rf.log) - 1
+	var entries []LogEntry
 
 	if lastLogIndex >= rf.nextIndex[server] {
-		// rf.Debug(dLeader, "Leader's log: %v", rf.log)
-		// rf.Debug(dLeader, "Sent next entries starting at %d", rf.nextIndex[server])
 		for i := rf.nextIndex[server]; i <= lastLogIndex; i++ {
 			entries = append(entries, rf.log[i])
 		}
@@ -444,25 +443,32 @@ func (rf *Raft) sendAppendEntries(server int) {
 		rf.matchIndex[server] = lastLogIndex
 		// Test if log entries in current term are safely replicated
 		for N := lastLogIndex; N > rf.commitIndex; N-- {
-			replicateCount := 0
-			for i := 0; i < len(rf.peers); i++ {
-				if rf.matchIndex[i] >= N && rf.log[N].Term == rf.currentTerm {
-					replicateCount++
+			if rf.log[N].Term != rf.currentTerm {
+				continue
+			}
+			replicaCount := 0
+			numServer := len(rf.peers)
+			for i := 0; i < numServer; i++ {
+				if rf.matchIndex[i] >= N {
+					replicaCount++
 				}
 			}
-			if replicateCount > len(rf.peers)/2 {
+			if replicaCount > numServer/2 {
 				rf.commitIndex = N
-				rf.Debug(dLeader, "Leader committed %d", rf.commitIndex)
-				rf.Debug(dLog, "Leader's log: %v", rf.log)
 				rf.applyCond.Signal()
 				break
 			}
 		}
-	} else {
-		rf.Debug(dLeader, "sendAppendEntries: Found a conflicting entry at %d for server %d",
-			rf.nextIndex[server] - 1, server)
-		rf.nextIndex[server]--
-		go rf.sendAppendEntries(server)
+	} else if reply.ConflictIndex != 0 {
+		rf.nextIndex[server] = reply.ConflictIndex
+		if reply.ConflictTerm > 0 {
+			for i := lastLogIndex; i > 0; i-- {
+				if rf.log[i].Term == reply.ConflictTerm {
+					rf.nextIndex[server] = i + 1
+					break
+				}
+			}
+		}
 	}
 }
 
@@ -479,25 +485,17 @@ func (rf *Raft) sendAppendEntries(server int) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
-
-	// Your code here (2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	index = len(rf.log)
-	term = rf.currentTerm
-	isLeader = rf.state == leader
+	index := len(rf.log)
+	term := rf.currentTerm
+	isLeader := rf.state == leader
 
-	// Issues AppendEntries immediately or later ???
 	if isLeader {
-		entry := LogEntry{Command: command, Term: rf.currentTerm}
-		rf.Debug(dLeader, "Leader received new log entry: %v", entry)
-		rf.log = append(rf.log, entry)
-		// rf.Debug(dLeader, "Leader's log: %v", rf.log)
+		rf.log = append(rf.log, LogEntry{Command: command, Term: term})
 		rf.matchIndex[rf.me] = index
+		rf.nextIndex[rf.me] = index + 1
 	}
 
 	return index, term, isLeader
@@ -626,7 +624,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	// log's indexing starts from 1
 	rf.log = append(rf.log, LogEntry{})
-
+	rf.commitIndex = 0
+	rf.lastApplied = 0
 	numServer := len(rf.peers)
 	rf.nextIndex = make([]int, numServer)
 	rf.matchIndex = make([]int, numServer)
@@ -634,13 +633,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	// start election goroutine
 	go rf.electionRoutine()
-
-	// start heartbeat goroutine to periodically send heartbeat messages
-	// if this server is a leader
 	go rf.replicationRoutine()
-
 	go rf.applyRoutine()
 
 	return rf
