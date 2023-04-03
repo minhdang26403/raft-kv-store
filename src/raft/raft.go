@@ -19,12 +19,14 @@ package raft
 
 import (
 	//	"bytes"
+	"bytes"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -177,6 +179,13 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// raftstate := w.Bytes()
 	// rf.persister.Save(raftstate, nil)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
 }
 
 // restore previously persisted state.
@@ -197,6 +206,20 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTerm int
+	var votedFor int
+	var log []LogEntry
+	if d.Decode(&currentTerm) != nil ||
+		d.Decode(&votedFor) != nil ||
+		d.Decode(&log) != nil {
+			return
+	} else {
+		rf.currentTerm = currentTerm
+		rf.votedFor = votedFor
+		rf.log = log
+	}
 }
 
 // the service says it has created a snapshot that has
@@ -213,6 +236,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	reply.VoteGranted = false
 	candidateTerm := args.Term
@@ -255,6 +279,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	reply.Success = false
 	leaderTerm := args.Term
@@ -365,6 +390,7 @@ func (rf *Raft) sendRequestVote(server int) {
 		rf.state = follower
 		rf.currentTerm = reply.Term
 		rf.votedFor = -1
+		rf.persist()
 	}
 	// state change at the time processing the RPC reply
 	if rf.state != candidate || rf.currentTerm != args.Term {
@@ -432,6 +458,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 		rf.state = follower
 		rf.currentTerm = reply.Term
 		rf.votedFor = -1
+		rf.persist()
 	}
 	// check that the term hasn't changed since sending the RPC
 	if rf.state != leader || rf.currentTerm != args.Term {
@@ -494,6 +521,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	if isLeader {
 		rf.log = append(rf.log, LogEntry{Command: command, Term: term})
+		rf.persist()
 		rf.matchIndex[rf.me] = index
 		rf.nextIndex[rf.me] = index + 1
 	}
@@ -533,6 +561,7 @@ func (rf *Raft) electionRoutine() {
 			// reset election timer
 			rf.electionTimeout = getElectionTimeout()
 			rf.lastHeartbeat = time.Now()
+			rf.persist()
 			rf.mu.Unlock()
 
 			for id := range rf.peers {
