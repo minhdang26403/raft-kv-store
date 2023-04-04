@@ -77,20 +77,19 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
-	state           State
-	electionTimeout time.Duration
-	lastHeartbeat   time.Time
-	voteCount       int
-	applyCh         chan ApplyMsg
-	applyCond       *sync.Cond
-
 	// persistent state on all servers
 	currentTerm int
 	votedFor    int
 	log         []LogEntry
 	// volatile state on all servers
-	commitIndex int
-	lastApplied int
+	state           State
+	electionTimeout time.Duration
+	lastHeartbeat   time.Time
+	voteCount       int
+	commitIndex     int
+	lastApplied     int
+	applyCh         chan ApplyMsg
+	applyCond       *sync.Cond
 	// volatile state on leaders
 	nextIndex  []int
 	matchIndex []int
@@ -133,6 +132,20 @@ type AppendEntriesReply struct {
 	Success       bool
 	ConflictTerm  int
 	ConflictIndex int
+}
+
+type InstallSnapshotArgs struct {
+	Term              int
+	LeaderId          int
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	offset            int
+	data              []byte
+	done              bool
+}
+
+type InstallSnapshotReply struct {
+	Term int
 }
 
 func (s State) String() string {
@@ -214,7 +227,7 @@ func (rf *Raft) readPersist(data []byte) {
 	if d.Decode(&currentTerm) != nil ||
 		d.Decode(&votedFor) != nil ||
 		d.Decode(&log) != nil {
-			return
+		return
 	} else {
 		rf.currentTerm = currentTerm
 		rf.votedFor = votedFor
@@ -332,6 +345,18 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	reply.Success = true
+}
+
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		return
+	}
+
+	
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -471,7 +496,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 		// Test if log entries in current term are safely replicated
 		for N := lastLogIndex; N > rf.commitIndex; N-- {
 			if rf.log[N].Term != rf.currentTerm {
-				continue
+				break
 			}
 			replicaCount := 0
 			numServer := len(rf.peers)
@@ -618,6 +643,7 @@ func (rf *Raft) applyRoutine() {
 		}
 		rf.mu.Unlock()
 
+		// Release lock before sending values to a channel (blocking)
 		for _, msg := range committedEntries {
 			rf.applyCh <- msg
 		}
