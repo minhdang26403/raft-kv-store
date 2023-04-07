@@ -314,18 +314,27 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// reset election timer when hearing from CURRENT leader
 	rf.lastHeartbeat = time.Now()
 
-	prevLogIndex := args.PrevLogIndex
 	lastLogIndex := rf.GetLastLogEntry().Index
+	prevLogIndex := args.PrevLogIndex
+
+	// stale log entries from leader
+	// follower already took a snapshot including these log entries
+	if prevLogIndex < rf.log[0].Index {
+		return
+	}
+
 	if prevLogIndex > lastLogIndex {
 		reply.ConflictIndex = lastLogIndex + 1
 		reply.ConflictTerm = -1
 		return
 	}
 
-	prevLogTerm := rf.GetLogEntry(prevLogIndex).Term
-	if prevLogTerm != args.PrevLogTerm {
-		reply.ConflictTerm = prevLogTerm
-		for i := prevLogIndex; i >= 0; i-- {
+	leaderPrevLogTerm := args.PrevLogTerm
+	followerPrevLogTerm := rf.GetLogEntry(prevLogIndex).Term
+
+	if followerPrevLogTerm != leaderPrevLogTerm {
+		reply.ConflictTerm = followerPrevLogTerm
+		for i := prevLogIndex; i >= rf.log[0].Index; i-- {
 			if rf.GetLogEntry(i).Term != reply.ConflictTerm {
 				break
 			}
@@ -504,6 +513,12 @@ func (rf *Raft) sendAppendEntries(server int) {
 	}
 
 	prevLogIndex := rf.nextIndex[server] - 1
+	// Leader already deleted log entries starting from this index
+	// Send snapshot to follower instead
+	if prevLogIndex < rf.log[0].Index {
+		rf.mu.Unlock()
+		return
+	}
 	prevLogTerm := rf.GetLogEntry(prevLogIndex).Term
 	lastLogIndex := rf.GetLastLogEntry().Index
 	var entries []LogEntry
@@ -567,7 +582,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 	} else if reply.ConflictIndex != 0 {
 		rf.nextIndex[server] = reply.ConflictIndex
 		if reply.ConflictTerm > 0 {
-			for i := lastLogIndex; i > 0; i-- {
+			for i := lastLogIndex; i > rf.log[0].Index; i-- {
 				if rf.GetLogEntry(i).Term == reply.ConflictTerm {
 					rf.nextIndex[server] = i + 1
 					break
@@ -712,10 +727,8 @@ func (rf *Raft) replicationRoutine() {
 					go rf.sendAppendEntries(id)
 				}
 			}
-			rf.mu.Unlock()
-		} else {
-			rf.mu.Unlock()
 		}
+		rf.mu.Unlock()
 		time.Sleep(HeartbeatInterval)
 	}
 }
