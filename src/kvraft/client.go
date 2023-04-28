@@ -1,13 +1,18 @@
 package kvraft
 
-import "6.5840/labrpc"
-import "crypto/rand"
-import "math/big"
+import (
+	"crypto/rand"
+	"math/big"
 
+	"6.5840/labrpc"
+)
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
+	leaderId int
+	clientId int64
+	messageId int
 }
 
 func nrand() int64 {
@@ -20,7 +25,9 @@ func nrand() int64 {
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
-	// You'll have to add code here.
+	ck.leaderId = 0
+	ck.clientId = nrand()
+	ck.messageId = 1
 	return ck
 }
 
@@ -35,9 +42,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // must match the declared types of the RPC handler function's
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) Get(key string) string {
-
-	// You will have to modify this function.
-	return ""
+	return ck.Operation(key, "", "Get")
 }
 
 // shared by Put and Append.
@@ -49,7 +54,7 @@ func (ck *Clerk) Get(key string) string {
 // must match the declared types of the RPC handler function's
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
-	// You will have to modify this function.
+	ck.Operation(key, value, op)
 }
 
 func (ck *Clerk) Put(key string, value string) {
@@ -57,4 +62,23 @@ func (ck *Clerk) Put(key string, value string) {
 }
 func (ck *Clerk) Append(key string, value string) {
 	ck.PutAppend(key, value, "Append")
+}
+
+func (ck *Clerk) Operation(key string, value string, op string) string {
+	args := OperationArgs{
+			Key: key, 
+			Value: value, 
+			Op: op,
+			ClientId: ck.clientId,
+			MessageId: ck.messageId,
+		}
+	reply := OperationReply{}
+	for {
+		ok := ck.servers[ck.leaderId].Call("KVServer.Operation", &args, &reply)
+		if ok && reply.Err == OK {
+			ck.messageId++
+			return reply.Value
+		}
+		ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
+	}
 }
