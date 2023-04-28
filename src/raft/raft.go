@@ -658,6 +658,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.persist()
 		rf.matchIndex[rf.me] = index
 		rf.nextIndex[rf.me] = index + 1
+		for server := range rf.peers {
+			if server == rf.me {
+				continue
+			}
+			go rf.sendAppendEntries(server)
+		}
 	}
 
 	return index, term, isLeader
