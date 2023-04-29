@@ -20,6 +20,7 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
+const RequestTimeout = 500 * time.Millisecond
 
 type Op struct {
 	// Your definitions here.
@@ -76,7 +77,7 @@ func (kv *KVServer) Operation(args *OperationArgs, reply *OperationReply) {
 			return
 		}
 		reply.Err = OK
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(RequestTimeout):
 		reply.Err = ErrTimeout
 	}
 
