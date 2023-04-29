@@ -1,5 +1,5 @@
 trap 'exit 1' INT
-echo "Starting test..."
+echo "Starting test $1..."
 go test -c -race
 chmod +x ./kvraft.test
 DIR=output_$3
