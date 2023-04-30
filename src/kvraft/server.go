@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"bytes"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,7 @@ type KVServer struct {
 	mu      sync.Mutex
 	me      int
 	rf      *raft.Raft
+	persister *raft.Persister
 	applyCh chan raft.ApplyMsg
 	dead    int32 // set by Kill()
 
@@ -45,6 +47,11 @@ type KVServer struct {
 	notifyCh map[int]chan Op
 	clientRequest map[int64]int
 	// Your definitions here.
+}
+
+type Snapshot struct {
+	ServiceState map[string]string
+	ClientState map[int64]int
 }
 
 func (kv *KVServer) Operation(args *OperationArgs, reply *OperationReply) {
@@ -98,7 +105,7 @@ func (kv *KVServer) applyRoutine() {
 				log.Fatal("Command must be of Op type")
 			}
 			kv.mu.Lock()
-			// Duplicate detection
+			// Duplicate detection. Only handle new request
 			if kv.clientRequest[command.ClientId] != command.MessageId {
 				switch command.Op {
 				case "Put":
@@ -113,9 +120,43 @@ func (kv *KVServer) applyRoutine() {
 			if notifyCh, ok := kv.notifyCh[msg.CommandIndex]; ok {
 				notifyCh <- command
 			}
+
+			if kv.maxraftstate != -1 && float32(kv.persister.RaftStateSize()) > 0.8 * float32(kv.maxraftstate) {
+				snapshot := Snapshot{
+					ServiceState: kv.kvStore,
+					ClientState: kv.clientRequest,
+				}
+				writer := new(bytes.Buffer)
+				encoder := labgob.NewEncoder(writer)
+				encoder.Encode(snapshot)
+				kv.rf.Snapshot(msg.CommandIndex, writer.Bytes())
+			}
+			kv.mu.Unlock()
+		}
+
+		if msg.SnapshotValid {
+			kv.mu.Lock()
+			kv.readPersist(msg.Snapshot)
 			kv.mu.Unlock()
 		}
 	}
+}
+
+func (kv *KVServer) readPersist(data []byte) {
+	if data == nil || len(data) < 1 {
+		return
+	}
+
+	reader := bytes.NewBuffer(data)
+	decoder := labgob.NewDecoder(reader)
+	
+	var snapshot Snapshot
+	if decoder.Decode(&snapshot) != nil {
+		log.Fatal("Decoding error")
+	}
+
+	kv.kvStore = snapshot.ServiceState
+	kv.clientRequest = snapshot.ClientState
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -153,6 +194,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	labgob.Register(Op{})
+	labgob.Register(Snapshot{})
 
 	kv := new(KVServer)
 	kv.me = me
@@ -162,9 +204,15 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.persister = persister
+
 	kv.kvStore = make(map[string]string)
 	kv.notifyCh = make(map[int]chan Op)
 	kv.clientRequest = make(map[int64]int)
+
+	if maxraftstate != -1 {
+		kv.readPersist(kv.persister.ReadSnapshot())
+	}
 
 	go kv.applyRoutine()
 
