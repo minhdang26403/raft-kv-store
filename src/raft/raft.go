@@ -175,8 +175,8 @@ func (rf *Raft) GetState() (int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	term := rf.currentTerm
-	isleader := rf.state == leader
-	return term, isleader
+	isLeader := rf.state == leader
+	return term, isLeader
 }
 
 // save Raft's persistent state to stable storage,
