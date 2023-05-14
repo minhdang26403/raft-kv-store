@@ -27,39 +27,39 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key string
-	Value string
-	Op string
-	ClientId int64
+	Key       string
+	Value     string
+	Op        string
+	ClientId  int64
 	MessageId int
 }
 
 type KVServer struct {
-	mu      sync.Mutex
-	me      int
-	rf      *raft.Raft
+	mu        sync.Mutex
+	me        int
+	rf        *raft.Raft
 	persister *raft.Persister
-	applyCh chan raft.ApplyMsg
-	dead    int32 // set by Kill()
+	applyCh   chan raft.ApplyMsg
+	dead      int32 // set by Kill()
 
-	maxraftstate int // snapshot if log grows this big
-	kvStore map[string]string
-	notifyCh map[int]chan Op
+	maxraftstate  int // snapshot if log grows this big
+	kvStore       map[string]string
+	notifyCh      map[int]chan Op
 	clientRequest map[int64]int
 	// Your definitions here.
 }
 
 type Snapshot struct {
 	ServiceState map[string]string
-	ClientState map[int64]int
+	ClientState  map[int64]int
 }
 
 func (kv *KVServer) Operation(args *OperationArgs, reply *OperationReply) {
 	command := Op{
-		Key: args.Key,
-		Value: args.Value,
-		Op: args.Op,
-		ClientId: args.ClientId,
+		Key:       args.Key,
+		Value:     args.Value,
+		Op:        args.Op,
+		ClientId:  args.ClientId,
 		MessageId: args.MessageId,
 	}
 	index, _, isLeader := kv.rf.Start(command)
@@ -74,7 +74,7 @@ func (kv *KVServer) Operation(args *OperationArgs, reply *OperationReply) {
 	kv.mu.Unlock()
 
 	select {
-	case appliedCommand := <- notifyCh:
+	case appliedCommand := <-notifyCh:
 		if appliedCommand.Op == "Get" {
 			reply.Value = appliedCommand.Value
 		}
@@ -121,10 +121,10 @@ func (kv *KVServer) applyRoutine() {
 				notifyCh <- command
 			}
 
-			if kv.maxraftstate != -1 && float32(kv.persister.RaftStateSize()) > 0.8 * float32(kv.maxraftstate) {
+			if kv.maxraftstate != -1 && float32(kv.persister.RaftStateSize()) > 0.8*float32(kv.maxraftstate) {
 				snapshot := Snapshot{
 					ServiceState: kv.kvStore,
-					ClientState: kv.clientRequest,
+					ClientState:  kv.clientRequest,
 				}
 				writer := new(bytes.Buffer)
 				encoder := labgob.NewEncoder(writer)
@@ -149,7 +149,7 @@ func (kv *KVServer) readPersist(data []byte) {
 
 	reader := bytes.NewBuffer(data)
 	decoder := labgob.NewDecoder(reader)
-	
+
 	var snapshot Snapshot
 	if decoder.Decode(&snapshot) != nil {
 		log.Fatal("Decoding error")

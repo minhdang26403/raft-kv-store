@@ -10,8 +10,8 @@ import (
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
-	leaderId int
-	clientId int64
+	leaderId  int
+	clientId  int64
 	messageId int
 }
 
@@ -66,12 +66,12 @@ func (ck *Clerk) Append(key string, value string) {
 
 func (ck *Clerk) Operation(key string, value string, op string) string {
 	args := OperationArgs{
-			Key: key, 
-			Value: value, 
-			Op: op,
-			ClientId: ck.clientId,
-			MessageId: ck.messageId,
-		}
+		Key:       key,
+		Value:     value,
+		Op:        op,
+		ClientId:  ck.clientId,
+		MessageId: ck.messageId,
+	}
 	reply := OperationReply{}
 	for {
 		ok := ck.servers[ck.leaderId].Call("KVServer.Operation", &args, &reply)
