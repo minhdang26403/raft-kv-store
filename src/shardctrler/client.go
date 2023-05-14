@@ -12,6 +12,9 @@ import "math/big"
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// Your data here.
+	leaderId int
+	clientId int64
+	messageId int
 }
 
 func nrand() int64 {
@@ -25,13 +28,14 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// Your code here.
+	ck.leaderId = 0
+	ck.clientId = nrand()
+	ck.messageId = 1
 	return ck
 }
 
 func (ck *Clerk) Query(num int) Config {
-	args := &QueryArgs{}
-	// Your code here.
-	args.Num = num
+	args := &QueryArgs{Num: num}
 	for {
 		// try each known server.
 		for _, srv := range ck.servers {
@@ -46,16 +50,19 @@ func (ck *Clerk) Query(num int) Config {
 }
 
 func (ck *Clerk) Join(servers map[int][]string) {
-	args := &JoinArgs{}
+	args := &JoinArgs{
+		Servers: servers,
+		ClientId: ck.clientId,
+		MessageId: ck.messageId,
+	}
 	// Your code here.
-	args.Servers = servers
-
 	for {
 		// try each known server.
 		for _, srv := range ck.servers {
 			var reply JoinReply
 			ok := srv.Call("ShardCtrler.Join", args, &reply)
 			if ok && reply.WrongLeader == false {
+				ck.messageId++
 				return
 			}
 		}
@@ -64,9 +71,11 @@ func (ck *Clerk) Join(servers map[int][]string) {
 }
 
 func (ck *Clerk) Leave(gids []int) {
-	args := &LeaveArgs{}
-	// Your code here.
-	args.GIDs = gids
+	args := &LeaveArgs{
+		GIDs: gids,
+		ClientId: ck.clientId,
+		MessageId: ck.messageId,
+	}
 
 	for {
 		// try each known server.
@@ -74,6 +83,7 @@ func (ck *Clerk) Leave(gids []int) {
 			var reply LeaveReply
 			ok := srv.Call("ShardCtrler.Leave", args, &reply)
 			if ok && reply.WrongLeader == false {
+				ck.messageId++
 				return
 			}
 		}
@@ -82,10 +92,12 @@ func (ck *Clerk) Leave(gids []int) {
 }
 
 func (ck *Clerk) Move(shard int, gid int) {
-	args := &MoveArgs{}
-	// Your code here.
-	args.Shard = shard
-	args.GID = gid
+	args := &MoveArgs{
+		Shard: shard,
+		GID: gid,
+		ClientId: ck.clientId,
+		MessageId: ck.messageId,
+	}
 
 	for {
 		// try each known server.
@@ -93,6 +105,7 @@ func (ck *Clerk) Move(shard int, gid int) {
 			var reply MoveReply
 			ok := srv.Call("ShardCtrler.Move", args, &reply)
 			if ok && reply.WrongLeader == false {
+				ck.messageId++
 				return
 			}
 		}
