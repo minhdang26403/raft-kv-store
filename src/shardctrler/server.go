@@ -46,9 +46,10 @@ func (sc *ShardCtrler) Operation(args *OperationArgs, reply *OperationReply) {
 	case appliedCommand := <-notifyCh:
 		// message at this index may not be replicated
 		// another message gets replicated
-		// this case happens when this server is no longer a leader
+		// this case happens when this server is no longer a leader due to crash or network partition
 		if clientId != appliedCommand.ClientId || messageId != appliedCommand.MessageId {
 			reply.WrongLeader = true
+			reply.Err = ErrWrongLeader
 			return
 		}
 		sc.mu.RLock()
@@ -102,10 +103,12 @@ func (sc *ShardCtrler) applyRoutine() {
 
 				switch method {
 				case "Join":
+					// Add new replica groups to new config
 					for gid, servers := range command.JoinServers {
 						newConfig.Groups[gid] = servers
 					}
 				case "Leave":
+					// Delete leaving replica groups from new config
 					for _, gid := range command.LeaveGIDs {
 						delete(newConfig.Groups, gid)
 					}
@@ -113,22 +116,23 @@ func (sc *ShardCtrler) applyRoutine() {
 					newConfig.Shards[command.MoveShard] = command.MoveGID
 				}
 
+				// Rebalance shards across replica groups
 				if method == "Join" || method == "Leave" {
 					gids := make([]int, 0)
 					for gid := range newConfig.Groups {
 						gids = append(gids, gid)
 					}
-					if len(gids) > 0 {
+					if len(gids) == 0 {
+						// all replica groups have left
+						for shard := range newConfig.Shards {
+							newConfig.Shards[shard] = 0
+						}
+					} else {
 						// Sort to guarantee same config on every server
 						// since go map iteration order is not deterministic
 						sort.Ints(gids)
 						for shard := range newConfig.Shards {
 							newConfig.Shards[shard] = gids[shard%len(gids)]
-						}
-					} else {
-						// all replica groups have left
-						for shard := range newConfig.Shards {
-							newConfig.Shards[shard] = 0
 						}
 					}
 				}

@@ -4,14 +4,16 @@ package shardctrler
 // Shardctrler clerk.
 //
 
-import "6.5840/labrpc"
-import "time"
-import "crypto/rand"
-import "math/big"
+import (
+	"6.5840/labrpc"
+	"crypto/rand"
+	"math/big"
+	"time"
+)
 
 type Clerk struct {
-	servers []*labrpc.ClientEnd
-	clientId int64
+	servers   []*labrpc.ClientEnd
+	clientId  int64
 	messageId int
 }
 
@@ -25,7 +27,6 @@ func nrand() int64 {
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
-	// Your code here.
 	ck.clientId = nrand()
 	ck.messageId = 1
 	return ck
@@ -48,19 +49,19 @@ func (ck *Clerk) Operation(args *OperationArgs) Config {
 
 func (ck *Clerk) Query(num int) Config {
 	args := OperationArgs{
-		ClientId: ck.clientId,
+		ClientId:  ck.clientId,
 		MessageId: ck.messageId,
-		Method: "Query",
-		QueryNum: num,
+		Method:    "Query",
+		QueryNum:  num,
 	}
 	return ck.Operation(&args)
 }
 
 func (ck *Clerk) Join(servers map[int][]string) {
 	args := OperationArgs{
-		ClientId: ck.clientId,
-		MessageId: ck.messageId,
-		Method: "Join",
+		ClientId:    ck.clientId,
+		MessageId:   ck.messageId,
+		Method:      "Join",
 		JoinServers: servers,
 	}
 	ck.Operation(&args)
@@ -68,9 +69,9 @@ func (ck *Clerk) Join(servers map[int][]string) {
 
 func (ck *Clerk) Leave(gids []int) {
 	args := OperationArgs{
-		ClientId: ck.clientId,
+		ClientId:  ck.clientId,
 		MessageId: ck.messageId,
-		Method: "Leave",
+		Method:    "Leave",
 		LeaveGIDs: gids,
 	}
 	ck.Operation(&args)
@@ -78,11 +79,11 @@ func (ck *Clerk) Leave(gids []int) {
 
 func (ck *Clerk) Move(shard int, gid int) {
 	args := OperationArgs{
-		ClientId: ck.clientId,
+		ClientId:  ck.clientId,
 		MessageId: ck.messageId,
-		Method: "Move",
+		Method:    "Move",
 		MoveShard: shard,
-		MoveGID: gid,
+		MoveGID:   gid,
 	}
 	ck.Operation(&args)
 }
