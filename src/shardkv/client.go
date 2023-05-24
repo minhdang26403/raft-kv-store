@@ -92,7 +92,7 @@ func (ck *Clerk) Operation(key string, value string, method string) string {
 				var reply OperationReply
 				ok := srv.Call("ShardKV.Operation", &args, &reply)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
-					ck.messageId++
+					ck.messageId++ // messageId of a new group may be different, need to have some way to change this
 					return reply.Value
 				}
 				if ok && reply.Err == ErrWrongGroup {
@@ -102,7 +102,7 @@ func (ck *Clerk) Operation(key string, value string, method string) string {
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
-		// ask controler for the latest configuration.
+		// ask controller for the latest configuration.
 		ck.config = ck.sm.Query(-1)
 	}
 }

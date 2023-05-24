@@ -31,3 +31,12 @@ type OperationReply struct {
 	Err   Err
 	Value string
 }
+
+type MigrationArgs struct {
+	Shard     map[string]string
+	ShardList []int
+}
+
+type MigrationReply struct {
+	Err Err
+}
