@@ -11,10 +11,11 @@ package shardkv
 
 const (
 	OK             = "OK"
+	ErrFuture      = "ErrFuture"
 	ErrNoKey       = "ErrNoKey"
+	ErrTimeout     = "ErrTimeout"
 	ErrWrongGroup  = "ErrWrongGroup"
 	ErrWrongLeader = "ErrWrongLeader"
-	ErrTimeout     = "ErrTimeout"
 )
 
 type Err string
@@ -32,11 +33,23 @@ type OperationReply struct {
 	Value string
 }
 
-type MigrationArgs struct {
-	Shard     map[string]string
+type PullShardArgs struct {
+	Num       int
 	ShardList []int
 }
 
-type MigrationReply struct {
+type PullShardReply struct {
+	Err    Err
+	Num    int
+	State  map[int]Shard
+	Client map[int64]int
+}
+
+type DeleteShardArgs struct {
+	Num       int
+	ShardList []int
+}
+
+type DeleteShardReply struct {
 	Err Err
 }

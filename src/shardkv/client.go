@@ -36,10 +36,9 @@ func nrand() int64 {
 }
 
 type Clerk struct {
-	sm       *shardctrler.Clerk
-	config   shardctrler.Config
-	make_end func(string) *labrpc.ClientEnd
-	// You will have to modify this struct.
+	sm        *shardctrler.Clerk
+	config    shardctrler.Config
+	make_end  func(string) *labrpc.ClientEnd
 	clientId  int64
 	messageId int
 }
@@ -92,7 +91,7 @@ func (ck *Clerk) Operation(key string, value string, method string) string {
 				var reply OperationReply
 				ok := srv.Call("ShardKV.Operation", &args, &reply)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
-					ck.messageId++ // messageId of a new group may be different, need to have some way to change this
+					ck.messageId++
 					return reply.Value
 				}
 				if ok && reply.Err == ErrWrongGroup {
